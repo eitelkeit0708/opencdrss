@@ -432,7 +432,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.transmission_url, "http://127.0.0.1:9091/transmission/rpc")
         self.assertEqual(config.max_detail_checks, 3)
         self.assertEqual(config.log_max_bytes, 2 * 1024 * 1024)
-        self.assertEqual(config.user_agent, "opencd-free-rss/1.0")
+        self.assertEqual(config.user_agent, app.DEFAULT_USER_AGENT)
         self.assertEqual(app.config_summary(config), "started client=transmission poll=600s delay=10s max_checks=3 cookiecloud=off telegram=off ua=default")
 
 

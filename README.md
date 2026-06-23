@@ -22,7 +22,6 @@ cp .env.example test.env
 # 编辑 test.env，填入 RSS、下载器、CookieCloud、Telegram 等配置
 ```
 
-不要提交 `test.env`、`.env`、`fnos.txt`、`seen.json`、日志或 pid 文件；这些已经写进 `.gitignore`。
 
 ## 下载器
 
@@ -102,4 +101,4 @@ python3 opencd_free_rss.py --notify-test
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | 空 | Telegram 通知配置 |
 | `LOG_FILE` | `opencd_free_rss.log` | 日志文件 |
 | `LOG_MAX_BYTES` | `2097152` | 日志超过该大小后保留尾部 |
-| `USER_AGENT` | `opencd-free-rss/1.0` | 请求使用的 User-Agent |
+| `USER_AGENT` | 浏览器 UA | 请求使用的 User-Agent，默认伪装成常见浏览器 |

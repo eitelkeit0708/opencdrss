@@ -15,6 +15,8 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
 TWOXFREE_RE = re.compile(
     r"2\s*x\s*free|2xfree|2x-free|2upfree|two\s*up\s*free|2\s*\u500d\s*\u514d\u8d39|2x\s*\u514d\u8d39",
     re.I,
@@ -219,7 +221,7 @@ class Config:
     telegram_chat_id: str = ""
     log_file: Path = Path("opencd_free_rss.log")
     log_max_bytes: int = 2 * 1024 * 1024
-    user_agent: str = "opencd-free-rss/1.0"
+    user_agent: str = DEFAULT_USER_AGENT
     download_client: str = "transmission"
     qbittorrent_url: str = "http://127.0.0.1:8080"
     qbittorrent_username: str = ""
@@ -270,7 +272,7 @@ def load_config() -> Config:
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
         log_file=Path(os.getenv("LOG_FILE", "opencd_free_rss.log")),
         log_max_bytes=int(os.getenv("LOG_MAX_BYTES", str(2 * 1024 * 1024))),
-        user_agent=os.getenv("USER_AGENT", "opencd-free-rss/1.0"),
+        user_agent=os.getenv("USER_AGENT", DEFAULT_USER_AGENT),
         download_client=os.getenv("DOWNLOAD_CLIENT", "transmission").lower(),
         qbittorrent_url=os.getenv("QBITTORRENT_URL", os.getenv("QBIT_URL", "http://127.0.0.1:8080")),
         qbittorrent_username=os.getenv("QBITTORRENT_USERNAME", os.getenv("QBIT_USERNAME", "")),
@@ -293,7 +295,7 @@ def trim_log(path: Path, max_bytes: int) -> None:
 def config_summary(config: Config) -> str:
     cookiecloud = "on" if config.cookiecloud_url and config.cookiecloud_uuid and config.cookiecloud_password else "off"
     telegram = "on" if config.telegram_bot_token and config.telegram_chat_id else "off"
-    ua = "default" if config.user_agent == "opencd-free-rss/1.0" else "custom"
+    ua = "default" if config.user_agent == DEFAULT_USER_AGENT else "custom"
     return (
         f"started client={config.download_client} poll={config.interval}s delay={config.request_delay:g}s "
         f"max_checks={config.max_detail_checks} cookiecloud={cookiecloud} telegram={telegram} ua={ua}"
@@ -398,7 +400,7 @@ def cookiecloud_cookie(config: Config) -> str:
     return cookiecloud_cookie_header(payload, config.cookiecloud_host) if isinstance(payload, dict) else ""
 
 
-def fetch_text(url: str, cookie: str = "", user_agent: str = "opencd-free-rss/1.0") -> str:
+def fetch_text(url: str, cookie: str = "", user_agent: str = DEFAULT_USER_AGENT) -> str:
     headers = {"User-Agent": user_agent}
     if cookie:
         headers["Cookie"] = cookie
@@ -548,7 +550,7 @@ def run_once(config: Config, transmission: Downloader) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Watch OpenCD RSS and add free torrents to Transmission")
+    parser = argparse.ArgumentParser(description="Watch OpenCD RSS and add free torrents to a download client")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--status", action="store_true", help="show seen-state summary and exit")
     group.add_argument("--cookie-test", action="store_true", help="check CookieCloud/static cookie availability and exit")
