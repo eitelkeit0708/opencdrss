@@ -555,6 +555,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     group.add_argument("--status", action="store_true", help="show seen-state summary and exit")
     group.add_argument("--cookie-test", action="store_true", help="check CookieCloud/static cookie availability and exit")
     group.add_argument("--notify-test", action="store_true", help="send a Telegram test notification and exit")
+    group.add_argument("--once", action="store_true", help="run one RSS check and exit")
     return parser.parse_args(argv)
 
 
@@ -572,6 +573,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.notify_test:
         sent = notify(config, "opencd-free-rss notify test")
         print("notify=sent" if sent else "notify=disabled_or_failed", flush=True)
+        return
+    if args.once:
+        trim_log(config.log_file, config.log_max_bytes)
+        print(config_summary(config), flush=True)
+        run_once(config, build_downloader(config))
         return
 
     trim_log(config.log_file, config.log_max_bytes)

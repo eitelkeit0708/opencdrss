@@ -46,35 +46,29 @@ QBITTORRENT_PASSWORD=你的密码
 
 ## 运行
 
-前台运行：
+任务调度模式（推荐）：
 
 ```bash
-python3 opencd_free_rss.py
+python3 opencd_free_rss.py --once
 ```
 
-后台运行：
-
-```bash
-./start.sh
-```
-
-开机启动可以填写：
-
-```bash
-cd /home/liouyuze123/opencd-free-rss && ./start.sh
-```
-
-`start.sh` 会避免重复启动已有的 `opencd_free_rss.py` 进程。
-
-用户 crontab 保活示例：
+用户 crontab 每 10 分钟执行一轮：
 
 ```cron
 # opencd-free-rss
-@reboot cd /home/liouyuze123/opencd-free-rss && ./start.sh >/dev/null 2>&1 # opencd-free-rss
-*/10 * * * * cd /home/liouyuze123/opencd-free-rss && ./start.sh >/dev/null 2>&1 # opencd-free-rss
+*/10 * * * * cd /home/liouyuze123/opencd-free-rss && flock -n opencd_free_rss.once.lock python3 opencd_free_rss.py --once >> opencd_free_rss.log 2>&1 # opencd-free-rss
 ```
 
-第二条是保活，不会重复跑多个实例。
+`flock` 用来防止上一轮还没跑完时重叠执行。
+
+常驻模式（可选）：
+
+```bash
+python3 opencd_free_rss.py
+./start.sh
+```
+
+`start.sh` 会避免重复启动已有的 `opencd_free_rss.py` 进程。
 
 ## 运维检查
 
