@@ -22,7 +22,6 @@ cp .env.example test.env
 # 编辑 test.env，填入 RSS、下载器、CookieCloud、Telegram 等配置
 ```
 
-
 ## 下载器
 
 默认使用 Transmission：
@@ -66,6 +65,16 @@ cd /home/liouyuze123/opencd-free-rss && ./start.sh
 ```
 
 `start.sh` 会避免重复启动已有的 `opencd_free_rss.py` 进程。
+
+用户 crontab 保活示例：
+
+```cron
+# opencd-free-rss
+@reboot cd /home/liouyuze123/opencd-free-rss && ./start.sh >/dev/null 2>&1 # opencd-free-rss
+*/10 * * * * cd /home/liouyuze123/opencd-free-rss && ./start.sh >/dev/null 2>&1 # opencd-free-rss
+```
+
+第二条是保活，不会重复跑多个实例。
 
 ## 运维检查
 
