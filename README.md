@@ -59,7 +59,7 @@ python3 opencd_free_rss.py
 ./start.sh
 ```
 
-FNOS 任务计划可以填写：
+开机启动可以填写：
 
 ```bash
 cd /home/liouyuze123/opencd-free-rss && ./start.sh
