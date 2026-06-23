@@ -92,6 +92,79 @@ class TransmissionTests(unittest.TestCase):
         self.assertEqual(body["arguments"]["filename"], "https://open.cd/download.php?id=7&passkey=secret")
 
 
+class QbittorrentTests(unittest.TestCase):
+    def test_builds_url_multipart_request(self):
+        content_type, body = app.qbittorrent_add_body(
+            "https://open.cd/download.php?id=7&passkey=secret",
+            "/downloads",
+            True,
+            boundary="BOUNDARY",
+        )
+        body_text = body.decode("utf-8")
+
+        self.assertEqual(content_type, "multipart/form-data; boundary=BOUNDARY")
+        self.assertIn('name="urls"', body_text)
+        self.assertIn("https://open.cd/download.php?id=7&passkey=secret", body_text)
+        self.assertIn('name="savepath"', body_text)
+        self.assertIn("/downloads", body_text)
+        self.assertIn('name="paused"', body_text)
+        self.assertIn("true", body_text)
+        self.assertTrue(body_text.endswith("--BOUNDARY--\r\n"))
+
+    def test_qbittorrent_logs_in_and_adds_with_sid_cookie(self):
+        calls = []
+
+        class FakeResponse:
+            def __init__(self, payload, headers=None):
+                self.payload = payload
+                self.headers = headers or {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self.payload
+
+        def fake_urlopen(request, timeout):
+            calls.append(request)
+            if request.full_url.endswith("/api/v2/auth/login"):
+                return FakeResponse(b"Ok.", {"Set-Cookie": "SID=abc; path=/"})
+            return FakeResponse(b"Ok.")
+
+        client = app.Qbittorrent("http://127.0.0.1:8080", "user", "pass", "/downloads", True)
+        with patch.object(app, "urlopen", fake_urlopen):
+            self.assertEqual(client.add("https://open.cd/download.php?id=7"), "success")
+
+        self.assertEqual(calls[0].full_url, "http://127.0.0.1:8080/api/v2/auth/login")
+        self.assertEqual(calls[0].data, b"username=user&password=pass")
+        self.assertEqual(calls[1].full_url, "http://127.0.0.1:8080/api/v2/torrents/add")
+        self.assertEqual(calls[1].get_header("Cookie"), "SID=abc")
+        self.assertIn(b'name="urls"', calls[1].data)
+
+    def test_build_downloader_selects_qbittorrent(self):
+        config = app.Config(
+            rss_url="https://example.invalid/rss",
+            transmission_url="",
+            transmission_username="",
+            transmission_password="",
+            site_cookie="",
+            state_file=app.Path("seen.json"),
+            interval=600,
+            download_dir="",
+            paused=False,
+            request_delay=10,
+            download_client="qbit",
+            qbittorrent_url="http://qbit:8080",
+            qbittorrent_username="u",
+            qbittorrent_password="p",
+        )
+
+        self.assertIsInstance(app.build_downloader(config), app.Qbittorrent)
+
+
 class RunOnceTests(unittest.TestCase):
     def test_item_error_does_not_stop_the_rest_of_the_feed(self):
         xml = """<rss><channel>
@@ -333,6 +406,22 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config.request_delay, 1.5)
 
+    def test_loads_qbittorrent_config(self):
+        env = {
+            "RSS_URL": "https://example.invalid/rss",
+            "DOWNLOAD_CLIENT": "qbit",
+            "QBITTORRENT_URL": "http://qbit:8080",
+            "QBITTORRENT_USERNAME": "u",
+            "QBITTORRENT_PASSWORD": "p",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            config = app.load_config()
+
+        self.assertEqual(config.download_client, "qbit")
+        self.assertEqual(config.qbittorrent_url, "http://qbit:8080")
+        self.assertEqual(config.qbittorrent_username, "u")
+        self.assertEqual(config.qbittorrent_password, "p")
+
     def test_direct_python_defaults_are_slow_enough(self):
         with patch.dict("os.environ", {"RSS_URL": "https://example.invalid/rss"}, clear=True):
             config = app.load_config()
@@ -344,7 +433,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.max_detail_checks, 3)
         self.assertEqual(config.log_max_bytes, 2 * 1024 * 1024)
         self.assertEqual(config.user_agent, "opencd-free-rss/1.0")
-        self.assertEqual(app.config_summary(config), "started poll=600s delay=10s max_checks=3 cookiecloud=off telegram=off ua=default")
+        self.assertEqual(app.config_summary(config), "started client=transmission poll=600s delay=10s max_checks=3 cookiecloud=off telegram=off ua=default")
 
 
 if __name__ == "__main__":

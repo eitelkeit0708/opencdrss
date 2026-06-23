@@ -1,6 +1,6 @@
 # OpenCD Free RSS
 
-一个轻量 Python 脚本，用来轮询 OpenCD RSS，打开条目详情页识别促销信息，并把 `free` / `2xfree` 种子添加到 Transmission。
+一个轻量 Python 脚本，用来轮询 OpenCD RSS，打开条目详情页识别促销信息，并把 `free` / `2xfree` 种子添加到 Transmission 或 qBittorrent。
 
 ## 功能
 
@@ -8,8 +8,9 @@
 - 逐个打开详情页，默认每个详情请求间隔 10 秒，避免瞬间打满站点。
 - 识别 `free` 和 `2xfree` 促销。
 - 已添加的种子不重复添加；非促销详情最多检查 3 次后跳过。
+- 支持 Transmission 和 qBittorrent WebUI。
 - 支持 CookieCloud 获取站点 cookie，也支持静态 `SITE_COOKIE`。
-- 支持 Telegram 通知 CookieCloud 失败、cookie 失效、Cloudflare 挑战、Transmission 添加失败。
+- 支持 Telegram 通知 CookieCloud 失败、cookie 失效、Cloudflare 挑战、下载器添加失败。
 - 自动裁剪日志，避免日志无限增长。
 
 ## 准备
@@ -18,10 +19,32 @@
 
 ```bash
 cp .env.example test.env
-# 编辑 test.env，填入 RSS、Transmission、CookieCloud、Telegram 等配置
+# 编辑 test.env，填入 RSS、下载器、CookieCloud、Telegram 等配置
 ```
 
 不要提交 `test.env`、`.env`、`fnos.txt`、`seen.json`、日志或 pid 文件；这些已经写进 `.gitignore`。
+
+## 下载器
+
+默认使用 Transmission：
+
+```env
+DOWNLOAD_CLIENT=transmission
+TRANSMISSION_URL=http://127.0.0.1:9091/transmission/rpc
+TRANSMISSION_USERNAME=
+TRANSMISSION_PASSWORD=
+```
+
+切到 qBittorrent：
+
+```env
+DOWNLOAD_CLIENT=qbit
+QBITTORRENT_URL=http://127.0.0.1:8080
+QBITTORRENT_USERNAME=admin
+QBITTORRENT_PASSWORD=你的密码
+```
+
+`DOWNLOAD_DIR` 和 `ADD_PAUSED` 对两个下载器都生效。
 
 ## 运行
 
@@ -63,9 +86,12 @@ python3 opencd_free_rss.py --notify-test
 | --- | --- | --- |
 | `RSS_URL` | 必填 | OpenCD RSS 地址 |
 | `SITE_COOKIE` | 空 | 静态站点 cookie，CookieCloud 不可用时兜底 |
+| `DOWNLOAD_CLIENT` | `transmission` | 下载器，支持 `transmission` / `tr` / `qbittorrent` / `qbit` / `qb` |
 | `TRANSMISSION_URL` | `http://127.0.0.1:9091/transmission/rpc` | Transmission RPC 地址 |
 | `TRANSMISSION_USERNAME` / `TRANSMISSION_PASSWORD` | 空 | Transmission 登录信息 |
-| `DOWNLOAD_DIR` | 空 | Transmission 下载目录，空则使用默认目录 |
+| `QBITTORRENT_URL` | `http://127.0.0.1:8080` | qBittorrent WebUI 地址 |
+| `QBITTORRENT_USERNAME` / `QBITTORRENT_PASSWORD` | 空 | qBittorrent WebUI 登录信息 |
+| `DOWNLOAD_DIR` | 空 | 下载目录，空则使用下载器默认目录 |
 | `ADD_PAUSED` | `false` | 是否以暂停状态添加 |
 | `POLL_SECONDS` | `600` | RSS 轮询间隔 |
 | `REQUEST_DELAY_SECONDS` | `10` | 详情页请求间隔 |

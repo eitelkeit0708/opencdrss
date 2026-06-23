@@ -99,6 +99,22 @@ def transmission_add_body(torrent_url: str, download_dir: str | None = None, pau
     return json.dumps({"method": "torrent-add", "arguments": args})
 
 
+def qbittorrent_add_body(torrent_url: str, download_dir: str = "", paused: bool = False, boundary: str = "") -> tuple[str, bytes]:
+    boundary = boundary or f"opencd{int(time.time() * 1000000):x}"
+    fields = [("urls", torrent_url)]
+    if download_dir:
+        fields.append(("savepath", download_dir))
+    if paused:
+        fields.append(("paused", "true"))
+    chunks: list[str] = []
+    for name, value in fields:
+        chunks.append(f"--{boundary}\r\n")
+        chunks.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n')
+        chunks.append(f"{value}\r\n")
+    chunks.append(f"--{boundary}--\r\n")
+    return f"multipart/form-data; boundary={boundary}", "".join(chunks).encode("utf-8")
+
+
 class Transmission:
     def __init__(self, url: str, username: str = "", password: str = "", download_dir: str = "", paused: bool = False):
         self.url = url
@@ -132,6 +148,49 @@ class Transmission:
         return result
 
 
+class Qbittorrent:
+    def __init__(self, url: str, username: str = "", password: str = "", download_dir: str = "", paused: bool = False):
+        self.url = url.rstrip("/")
+        self.username = username
+        self.password = password
+        self.download_dir = download_dir
+        self.paused = paused
+        self.sid_cookie = ""
+
+    def add(self, torrent_url: str) -> str:
+        if self.username and not self.sid_cookie:
+            self.login()
+        content_type, body = qbittorrent_add_body(torrent_url, self.download_dir, self.paused)
+        headers = {"Content-Type": content_type, "Referer": self.url}
+        if self.sid_cookie:
+            headers["Cookie"] = self.sid_cookie
+        request = Request(self.url + "/api/v2/torrents/add", data=body, headers=headers)
+        with urlopen(request, timeout=30) as response:
+            text = response.read().decode("utf-8", errors="replace").strip()
+        if text and text.lower().startswith("fails"):
+            raise RuntimeError(f"qBittorrent rejected torrent: {text}")
+        return "success"
+
+    def login(self) -> None:
+        data = urlencode({"username": self.username, "password": self.password}).encode()
+        request = Request(
+            self.url + "/api/v2/auth/login",
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded", "Referer": self.url},
+        )
+        with urlopen(request, timeout=30) as response:
+            text = response.read().decode("utf-8", errors="replace").strip()
+            cookie = response.headers.get("Set-Cookie", "")
+        if text != "Ok.":
+            raise RuntimeError(f"qBittorrent login failed: {text or 'empty response'}")
+        self.sid_cookie = cookie.split(";", 1)[0]
+        if not self.sid_cookie:
+            raise RuntimeError("qBittorrent login did not return SID")
+
+
+Downloader = Transmission | Qbittorrent
+
+
 def basic_auth(username: str, password: str) -> str:
     if not username:
         return ""
@@ -161,6 +220,10 @@ class Config:
     log_file: Path = Path("opencd_free_rss.log")
     log_max_bytes: int = 2 * 1024 * 1024
     user_agent: str = "opencd-free-rss/1.0"
+    download_client: str = "transmission"
+    qbittorrent_url: str = "http://127.0.0.1:8080"
+    qbittorrent_username: str = ""
+    qbittorrent_password: str = ""
 
 
 def load_env_file(path: str) -> None:
@@ -208,6 +271,10 @@ def load_config() -> Config:
         log_file=Path(os.getenv("LOG_FILE", "opencd_free_rss.log")),
         log_max_bytes=int(os.getenv("LOG_MAX_BYTES", str(2 * 1024 * 1024))),
         user_agent=os.getenv("USER_AGENT", "opencd-free-rss/1.0"),
+        download_client=os.getenv("DOWNLOAD_CLIENT", "transmission").lower(),
+        qbittorrent_url=os.getenv("QBITTORRENT_URL", os.getenv("QBIT_URL", "http://127.0.0.1:8080")),
+        qbittorrent_username=os.getenv("QBITTORRENT_USERNAME", os.getenv("QBIT_USERNAME", "")),
+        qbittorrent_password=os.getenv("QBITTORRENT_PASSWORD", os.getenv("QBIT_PASSWORD", "")),
     )
 
 
@@ -228,7 +295,7 @@ def config_summary(config: Config) -> str:
     telegram = "on" if config.telegram_bot_token and config.telegram_chat_id else "off"
     ua = "default" if config.user_agent == "opencd-free-rss/1.0" else "custom"
     return (
-        f"started poll={config.interval}s delay={config.request_delay:g}s "
+        f"started client={config.download_client} poll={config.interval}s delay={config.request_delay:g}s "
         f"max_checks={config.max_detail_checks} cookiecloud={cookiecloud} telegram={telegram} ua={ua}"
     )
 
@@ -413,7 +480,27 @@ def best_cookie(config: Config) -> str:
         return config.site_cookie
 
 
-def run_once(config: Config, transmission: Transmission) -> None:
+def build_downloader(config: Config) -> Downloader:
+    if config.download_client in {"transmission", "tr"}:
+        return Transmission(
+            config.transmission_url,
+            config.transmission_username,
+            config.transmission_password,
+            config.download_dir,
+            config.paused,
+        )
+    if config.download_client in {"qbittorrent", "qbit", "qb"}:
+        return Qbittorrent(
+            config.qbittorrent_url,
+            config.qbittorrent_username,
+            config.qbittorrent_password,
+            config.download_dir,
+            config.paused,
+        )
+    raise SystemExit(f"Unknown DOWNLOAD_CLIENT: {config.download_client}")
+
+
+def run_once(config: Config, transmission: Downloader) -> None:
     state = load_state(config.state_file)
     xml_text = fetch_text(config.rss_url, user_agent=config.user_agent)
     cookie = best_cookie(config)
@@ -448,7 +535,7 @@ def run_once(config: Config, transmission: Transmission) -> None:
                 try:
                     result = transmission.add(item.torrent_url)
                 except Exception as error:
-                    notify(config, f"Transmission add failed for {item.key}: {error}")
+                    notify(config, f"Torrent add failed for {item.key}: {error}")
                     raise
                 print(f"added {promotion}: {item.title} ({result})", flush=True)
                 mark_checked(state, item.key, added=True)
@@ -488,13 +575,7 @@ def main(argv: list[str] | None = None) -> None:
     trim_log(config.log_file, config.log_max_bytes)
     print(config_summary(config), flush=True)
     notify(config, "opencd-free-rss started")
-    transmission = Transmission(
-        config.transmission_url,
-        config.transmission_username,
-        config.transmission_password,
-        config.download_dir,
-        config.paused,
-    )
+    transmission = build_downloader(config)
     while True:
         try:
             run_once(config, transmission)
