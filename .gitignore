@@ -10,3 +10,5 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+probe_live.py
+test_opencd_free_rss.py
