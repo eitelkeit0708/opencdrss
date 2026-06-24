@@ -118,33 +118,79 @@ def qbittorrent_add_body(torrent_url: str, download_dir: str = "", paused: bool 
 
 
 class Transmission:
-    def __init__(self, url: str, username: str = "", password: str = "", download_dir: str = "", paused: bool = False):
+    def __init__(
+        self,
+        url: str,
+        username: str = "",
+        password: str = "",
+        download_dir: str = "",
+        paused: bool = False,
+        unlimit_upload_tracker: str = "open.cd",
+    ):
         self.url = url
         self.auth = basic_auth(username, password)
         self.download_dir = download_dir
         self.paused = paused
         self.session_id = ""
+        self.unlimit_upload_tracker = unlimit_upload_tracker.lower()
 
     def add(self, torrent_url: str) -> str:
-        body = transmission_add_body(torrent_url, self.download_dir or None, self.paused).encode()
-        try:
-            return self._post(body)
-        except HTTPError as error:
-            if error.code != 409:
-                raise
-            self.session_id = error.headers["X-Transmission-Session-Id"]
-            return self._post(body)
+        payload = self._rpc_payload(transmission_add_body(torrent_url, self.download_dir or None, self.paused).encode())
+        result = self._result(payload)
+        self._unlimit_added_upload(payload)
+        return result
 
-    def _post(self, body: bytes) -> str:
+    def unlimit_upload_by_tracker(self) -> int:
+        if not self.unlimit_upload_tracker:
+            return 0
+        fields = ["id", "name", "uploadLimited", "honorsSessionLimits", "trackers", "trackerStats"]
+        payload = self._rpc("torrent-get", {"fields": fields})
+        ids = []
+        for torrent in payload.get("arguments", {}).get("torrents", []):
+            if not self._matches_tracker(torrent):
+                continue
+            if torrent.get("uploadLimited") or torrent.get("honorsSessionLimits") is not False:
+                ids.append(torrent["id"])
+        self._unlimit_upload_ids(ids)
+        return len(ids)
+
+    def _unlimit_added_upload(self, payload: dict[str, object]) -> None:
+        args = payload.get("arguments", {})
+        if not isinstance(args, dict):
+            return
+        torrent = args.get("torrent-added") or args.get("torrent-duplicate")
+        if isinstance(torrent, dict) and "id" in torrent:
+            self._unlimit_upload_ids([torrent["id"]])
+
+    def _unlimit_upload_ids(self, ids: list[object]) -> None:
+        if ids:
+            self._rpc("torrent-set", {"ids": ids, "uploadLimited": False, "honorsSessionLimits": False})
+
+    def _matches_tracker(self, torrent: dict[str, object]) -> bool:
+        data = json.dumps([torrent.get("trackers"), torrent.get("trackerStats")], ensure_ascii=False).lower()
+        return self.unlimit_upload_tracker in data
+
+    def _rpc(self, method: str, arguments: dict[str, object] | None = None) -> dict[str, object]:
+        return self._rpc_payload(json.dumps({"method": method, "arguments": arguments or {}}).encode())
+
+    def _rpc_payload(self, body: bytes) -> dict[str, object]:
         headers = {"Content-Type": "application/json"}
         if self.session_id:
             headers["X-Transmission-Session-Id"] = self.session_id
         if self.auth:
             headers["Authorization"] = self.auth
         request = Request(self.url, data=body, headers=headers)
-        with urlopen(request, timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        result = payload.get("result", "")
+        try:
+            with urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            if error.code != 409:
+                raise
+            self.session_id = error.headers["X-Transmission-Session-Id"]
+            return self._rpc_payload(body)
+
+    def _result(self, payload: dict[str, object]) -> str:
+        result = str(payload.get("result", ""))
         if result not in {"success", "duplicate torrent"}:
             raise RuntimeError(f"Transmission rejected torrent: {result}")
         return result
@@ -226,6 +272,7 @@ class Config:
     qbittorrent_url: str = "http://127.0.0.1:8080"
     qbittorrent_username: str = ""
     qbittorrent_password: str = ""
+    transmission_unlimit_upload_tracker: str = "open.cd"
 
 
 def load_env_file(path: str) -> None:
@@ -277,6 +324,7 @@ def load_config() -> Config:
         qbittorrent_url=os.getenv("QBITTORRENT_URL", os.getenv("QBIT_URL", "http://127.0.0.1:8080")),
         qbittorrent_username=os.getenv("QBITTORRENT_USERNAME", os.getenv("QBIT_USERNAME", "")),
         qbittorrent_password=os.getenv("QBITTORRENT_PASSWORD", os.getenv("QBIT_PASSWORD", "")),
+        transmission_unlimit_upload_tracker=os.getenv("TRANSMISSION_UNLIMIT_UPLOAD_TRACKER", "open.cd").lower(),
     )
 
 
@@ -490,6 +538,7 @@ def build_downloader(config: Config) -> Downloader:
             config.transmission_password,
             config.download_dir,
             config.paused,
+            config.transmission_unlimit_upload_tracker,
         )
     if config.download_client in {"qbittorrent", "qbit", "qb"}:
         return Qbittorrent(
@@ -547,6 +596,10 @@ def run_once(config: Config, transmission: Downloader) -> None:
             save_state(config.state_file, state)
         except Exception as error:
             print(f"error {item.key}: {error}", flush=True)
+    if isinstance(transmission, Transmission):
+        changed = transmission.unlimit_upload_by_tracker()
+        if changed:
+            print(f"unlimited upload for {changed} Transmission torrents matching {transmission.unlimit_upload_tracker}", flush=True)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

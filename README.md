@@ -9,6 +9,7 @@
 - 识别 `free` 和 `2xfree` 促销。
 - 已添加的种子不重复添加；非促销详情最多检查 3 次后跳过。
 - 支持 Transmission 和 qBittorrent WebUI。
+- 支持 Transmission 按 tracker 匹配 OpenCD 种子，让其不受全局上传限速影响。
 - 支持 CookieCloud 获取站点 cookie，也支持静态 `SITE_COOKIE`。
 - 支持 Telegram 通知 CookieCloud 失败、cookie 失效、Cloudflare 挑战、下载器添加失败。
 - 自动裁剪日志，避免日志无限增长。
@@ -91,6 +92,7 @@ python3 opencd_free_rss.py --notify-test
 | `DOWNLOAD_CLIENT` | `transmission` | 下载器，支持 `transmission` / `tr` / `qbittorrent` / `qbit` / `qb` |
 | `TRANSMISSION_URL` | `http://127.0.0.1:9091/transmission/rpc` | Transmission RPC 地址 |
 | `TRANSMISSION_USERNAME` / `TRANSMISSION_PASSWORD` | 空 | Transmission 登录信息 |
+| `TRANSMISSION_UNLIMIT_UPLOAD_TRACKER` | `open.cd` | Transmission 按 tracker 匹配种子，取消 per-torrent 上传限速并让其不受全局上传限速影响；留空可关闭 |
 | `QBITTORRENT_URL` | `http://127.0.0.1:8080` | qBittorrent WebUI 地址 |
 | `QBITTORRENT_USERNAME` / `QBITTORRENT_PASSWORD` | 空 | qBittorrent WebUI 登录信息 |
 | `DOWNLOAD_DIR` | 空 | 下载目录，空则使用下载器默认目录 |
